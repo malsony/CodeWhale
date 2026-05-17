@@ -1096,11 +1096,32 @@ fn editorial_tool_rows(rows: Vec<SidebarToolRow>, limit: usize) -> Vec<SidebarTo
     let mut candidates: Vec<Candidate> = Vec::new();
     let mut low_value_groups: Vec<(usize, SidebarToolRow, usize)> = Vec::new();
     let mut ci_poll_groups: Vec<(usize, SidebarToolRow, usize)> = Vec::new();
+    let mut shell_wait_group: Option<(usize, SidebarToolRow, usize)> = None;
     let mut seen_success: Vec<String> = Vec::new();
 
     for (order, mut row) in rows.into_iter().enumerate() {
         if row.status == ToolStatus::Failed {
             row.summary = failure_summary_with_hint(&row.summary);
+        }
+
+        // Repeated `task_shell_wait` polls would otherwise accumulate as
+        // distinct "wait shell job" rows and make a still-waiting (or
+        // already-failed) turn feel stuck (#1737). Collapse them into one
+        // row, keeping the most severe status and the latest summary.
+        if is_shell_wait_poll_row(&row) {
+            if let Some((_, grouped, count)) = shell_wait_group.as_mut() {
+                *count += 1;
+                if shell_wait_status_rank(row.status) < shell_wait_status_rank(grouped.status) {
+                    grouped.status = row.status;
+                }
+                if !row.summary.trim().is_empty() {
+                    grouped.summary = row.summary;
+                }
+                grouped.duration_ms = grouped.duration_ms.max(row.duration_ms);
+            } else {
+                shell_wait_group = Some((order, row, 1));
+            }
+            continue;
         }
 
         if is_ci_poll_row(&row) {
@@ -1165,6 +1186,28 @@ fn editorial_tool_rows(rows: Vec<SidebarToolRow>, limit: usize) -> Vec<SidebarTo
         });
     }
 
+    if let Some((order, mut row, count)) = shell_wait_group {
+        if count > 1 {
+            let latest = row.summary.trim().to_string();
+            row.summary = if latest.is_empty() {
+                format!(
+                    "{count} polls collapsed \u{00B7} {} details",
+                    crate::tui::key_shortcuts::tool_details_shortcut_label()
+                )
+            } else {
+                format!(
+                    "{count} polls collapsed \u{00B7} {latest} \u{00B7} {} details",
+                    crate::tui::key_shortcuts::tool_details_shortcut_label()
+                )
+            };
+        }
+        candidates.push(Candidate {
+            rank: tool_row_rank(&row),
+            order,
+            row,
+        });
+    }
+
     for (order, mut row, count) in low_value_groups {
         if count > 1 {
             row.name = format!("{} x{count}", row.name);
@@ -1197,6 +1240,21 @@ fn sidebar_row_identity(row: &SidebarToolRow) -> String {
 
 fn is_ci_poll_row(row: &SidebarToolRow) -> bool {
     row.name.starts_with("gh pr checks") || row.name.starts_with("gh run watch")
+}
+
+fn is_shell_wait_poll_row(row: &SidebarToolRow) -> bool {
+    row.name == friendly_generic_tool_name("task_shell_wait")
+}
+
+/// Lower rank = more severe; a collapsed shell-wait row keeps the worst
+/// status seen across the polls so a failed wait doesn't get masked by a
+/// later successful poll row.
+fn shell_wait_status_rank(status: ToolStatus) -> u8 {
+    match status {
+        ToolStatus::Failed => 0,
+        ToolStatus::Running => 1,
+        ToolStatus::Success => 2,
+    }
 }
 
 fn normalize_activity_text(text: &str) -> String {
@@ -2356,6 +2414,48 @@ mod tests {
         assert!(
             !text.iter().any(|line| line.contains("task_shell_wait")),
             "internal helper name should not leak into sidebar: {text:?}"
+        );
+    }
+
+    #[test]
+    fn tasks_panel_collapses_repeated_shell_wait_polls() {
+        let mut app = create_test_app();
+        let mut active = ActiveCell::new();
+        for i in 0..5 {
+            active.push_tool(
+                &format!("shell-wait-{i}"),
+                HistoryCell::Tool(ToolCell::Generic(GenericToolCell {
+                    name: "task_shell_wait".to_string(),
+                    status: ToolStatus::Running,
+                    input_summary: Some("task_id: shell_33a08c3c".to_string()),
+                    output: None,
+                    prompts: None,
+                    spillover_path: None,
+                    output_summary: Some(format!("poll {i}: still running")),
+                    is_diff: false,
+                })),
+            );
+        }
+        app.active_cell = Some(active);
+
+        let text = lines_to_text(&task_panel_lines(&app, 80, 12));
+
+        let wait_rows = text
+            .iter()
+            .filter(|line| line.contains("wait shell job"))
+            .count();
+        assert_eq!(
+            wait_rows, 1,
+            "repeated task_shell_wait polls must collapse into one row: {text:?}"
+        );
+        assert!(
+            text.iter().any(|line| line.contains("5 polls collapsed")),
+            "collapsed shell-wait row should report the poll count: {text:?}"
+        );
+        assert!(
+            text.iter()
+                .any(|line| line.contains(crate::tui::key_shortcuts::tool_details_shortcut_label())),
+            "collapsed shell-wait row should point to details: {text:?}"
         );
     }
 
