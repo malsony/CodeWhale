@@ -184,6 +184,7 @@ pub enum UiThemeValue {
     TokyoNight,
     Dracula,
     GruvboxDark,
+    Matrix,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
@@ -744,6 +745,7 @@ impl UiThemeValue {
             Self::TokyoNight => "tokyo-night",
             Self::Dracula => "dracula",
             Self::GruvboxDark => "gruvbox-dark",
+            Self::Matrix => "matrix",
         }
     }
 
@@ -757,6 +759,7 @@ impl UiThemeValue {
             Some("tokyo-night") => Ok(Self::TokyoNight),
             Some("dracula") => Ok(Self::Dracula),
             Some("gruvbox-dark") => Ok(Self::GruvboxDark),
+            Some("matrix") => Ok(Self::Matrix),
             Some(other) => bail!("unsupported theme '{other}'"),
             None => bail!("invalid theme '{value}'"),
         }
@@ -1187,7 +1190,8 @@ background_color = "#1A1B26"
                 "catppuccin-mocha",
                 "tokyo-night",
                 "dracula",
-                "gruvbox-dark"
+                "gruvbox-dark",
+                "matrix"
             ])
         );
     }
