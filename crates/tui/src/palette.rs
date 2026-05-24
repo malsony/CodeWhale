@@ -948,7 +948,11 @@ pub fn adapt_fg_for_theme(color: Color, theme: ThemeId, ui: &UiTheme) -> Color {
     } else if color == TEXT_ACCENT || color == DEEPSEEK_SKY || color == ACCENT_TOOL_LIVE {
         ui.status_working
     } else if color == TEXT_REASONING || color == ACCENT_REASONING_LIVE {
-        ui.mode_plan
+        if theme == ThemeId::Matrix {
+            Color::Rgb(0x00, 0x44, 0x00) // #004400 darker green
+        } else {
+            ui.mode_plan
+        }
     } else if color == ACCENT_TOOL_ISSUE {
         ui.mode_yolo
     } else if color == STATUS_WARNING {
