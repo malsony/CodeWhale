@@ -42,10 +42,10 @@ pub const GRAYSCALE_SELECTION_RGB: (u8, u8, u8) = (62, 62, 62); // #3E3E3E
 pub const MATRIX_SURFACE_RGB: (u8, u8, u8) = (0, 10, 0); // #000A00
 pub const MATRIX_ELEVATED_RGB: (u8, u8, u8) = (0, 51, 0); // #003300
 pub const MATRIX_SELECTION_RGB: (u8, u8, u8) = (0, 51, 0); // #003300
-pub const MATRIX_TEXT_BODY_RGB: (u8, u8, u8) = (136, 255, 136); // #88FF88
-pub const MATRIX_TEXT_MUTED_RGB: (u8, u8, u8) = (0, 153, 0); // #009900
+pub const MATRIX_TEXT_BODY_RGB: (u8, u8, u8) = (0, 204, 0); // #00CC00
+pub const MATRIX_TEXT_MUTED_RGB: (u8, u8, u8) = (0, 102, 0); // #006600
 pub const MATRIX_TEXT_HINT_RGB: (u8, u8, u8) = (0, 102, 0); // #006600
-pub const MATRIX_TEXT_SOFT_RGB: (u8, u8, u8) = (221, 255, 221); // #DDFFDD
+pub const MATRIX_TEXT_SOFT_RGB: (u8, u8, u8) = (187, 255, 187); // #BBFFBB
 pub const MATRIX_TEXT_DIM_RGB: (u8, u8, u8) = (0, 102, 0); // #006600
 pub const MATRIX_BORDER_RGB: (u8, u8, u8) = (0, 204, 0); // #00CC00
 
@@ -545,6 +545,7 @@ pub const MATRIX_UI_THEME: UiTheme = UiTheme {
     mode_agent: Color::Rgb(0, 153, 0),
     mode_yolo: Color::Rgb(255, 100, 100),
     mode_plan: Color::Rgb(255, 170, 60),
+    mode_goal: Color::Rgb(136, 255, 136), // #88FF88 bright green
     status_ready: Color::Rgb(0, 85, 0),
     status_working: Color::Rgb(MATRIX_TEXT_BODY_RGB.0, MATRIX_TEXT_BODY_RGB.1, MATRIX_TEXT_BODY_RGB.2),
     status_warning: Color::Rgb(204, 204, 0),
