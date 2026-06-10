@@ -683,7 +683,6 @@ impl Engine {
             goal_objective_for_prompt(config.goal_objective.as_deref(), &config.goal_state);
         let system_prompt =
             prompts::system_prompt_for_mode_with_context_skills_session_and_approval(
-                AppMode::Agent,
                 &config.workspace,
                 None,
                 Some(&config.skills_dir),
@@ -696,7 +695,6 @@ impl Engine {
                     translation_enabled: config.translation_enabled,
                     model_id: &config.model,
                     show_thinking: config.show_thinking,
-                    allow_shell: config.allow_shell,
                 },
             );
         let stable_prompt = Some(system_prompt);
@@ -1458,7 +1456,7 @@ impl Engine {
         Message {
             role: "user".to_string(),
             content: vec![ContentBlock::Text {
-                text: runtime_prompt_text(mode, approval_mode),
+                text: runtime_prompt_text(mode, approval_mode, self.session.allow_shell),
                 cache_control: None,
             }],
         }
@@ -2428,7 +2426,6 @@ impl Engine {
             &self.config.goal_state,
         );
         let base = prompts::system_prompt_for_mode_with_context_skills_session_and_approval(
-            AppMode::Agent,
             &self.config.workspace,
             None,
             Some(&self.config.skills_dir),
@@ -2441,7 +2438,6 @@ impl Engine {
                 translation_enabled: self.config.translation_enabled,
                 model_id: &self.config.model,
                 show_thinking: self.config.show_thinking,
-                allow_shell: self.session.allow_shell,
             },
         );
         let mut stable_prompt =
@@ -2651,11 +2647,16 @@ fn agent_approval_mode_for_turn(
 
 /// Produce a minimal runtime-policy tag for the per-turn transient user message.
 ///
-/// All mode and approval policy descriptions live in the frozen system-prompt
-/// prefix (`render_runtime_policy_reference()`). This tag is a pointer — the
-/// model looks up the corresponding rules from the system prompt.  Reduces
-/// per-request overhead from ~500 tokens to ~12 tokens.
-fn runtime_prompt_text(mode: AppMode, approval_mode: crate::tui::approval::ApprovalMode) -> String {
+/// All mode / approval / shell policy descriptions live in the frozen
+/// system-prompt prefix (`render_runtime_policy_reference()`). This tag
+/// is a pointer — the model looks up the corresponding rules from the
+/// system prompt.  Keeping these flags out of the static prefix preserves
+/// the DeepSeek prefix cache across mode-switches and config-toggles.
+fn runtime_prompt_text(
+    mode: AppMode,
+    approval_mode: crate::tui::approval::ApprovalMode,
+    allow_shell: bool,
+) -> String {
     let mode_str = match mode {
         AppMode::Agent => "agent",
         AppMode::Plan => "plan",
@@ -2667,7 +2668,7 @@ fn runtime_prompt_text(mode: AppMode, approval_mode: crate::tui::approval::Appro
         crate::tui::approval::ApprovalMode::Never => "never",
     };
     format!(
-        "<runtime_prompt visibility=\"internal\" mode=\"{mode_str}\" approval=\"{approval_str}\"/>"
+        "<runtime_prompt visibility=\"internal\" mode=\"{mode_str}\" approval=\"{approval_str}\" allow_shell=\"{allow_shell}\"/>"
     )
 }
 

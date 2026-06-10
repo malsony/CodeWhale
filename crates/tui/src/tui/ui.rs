@@ -5355,7 +5355,6 @@ async fn dispatch_user_message(
     let message_index = app.api_messages.len();
     app.system_prompt = Some(
         prompts::system_prompt_for_mode_with_context_skills_and_session(
-            app.mode,
             &app.workspace,
             None,
             None,
@@ -5368,7 +5367,6 @@ async fn dispatch_user_message(
                 translation_enabled: app.translation_enabled,
                 model_id: &app.model,
                 show_thinking: app.show_thinking,
-                allow_shell: app.allow_shell,
             },
         ),
     );
