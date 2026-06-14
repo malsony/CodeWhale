@@ -69,6 +69,7 @@ mod provider_adapter;
 mod provider_readiness;
 mod purge;
 pub mod repl;
+mod request_tuning;
 mod resource_telemetry;
 mod retry_status;
 pub mod rlm;
