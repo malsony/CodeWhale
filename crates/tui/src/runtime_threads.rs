@@ -1724,23 +1724,24 @@ impl RuntimeThreadManager {
         let mode = parse_mode(req.mode.as_deref().unwrap_or(&thread.mode));
         let requested_model = req.model.unwrap_or_else(|| thread.model.clone());
         let auto_model = requested_model.trim().eq_ignore_ascii_case("auto");
-        let (model, reasoning_effort) = if auto_model {
-            let selection = crate::model_routing::resolve_auto_route_with_flash(
+        let (provider, model, reasoning_effort) = if auto_model {
+            let selection = crate::model_routing::resolve_auto_route_with_inventory(
                 &self.config,
                 &prompt,
                 "",
                 "auto",
                 "auto",
             )
-            .await;
+            .await?;
             (
+                selection.provider,
                 selection.model,
                 selection
                     .reasoning_effort
                     .map(|effort| effort.as_setting().to_string()),
             )
         } else {
-            (requested_model, None)
+            (self.config.api_provider(), requested_model, None)
         };
         let allow_shell = req.allow_shell.unwrap_or(thread.allow_shell);
         let trust_mode = req.trust_mode.unwrap_or(thread.trust_mode);
@@ -1753,6 +1754,7 @@ impl RuntimeThreadManager {
             .send(Op::SendMessage {
                 content: prompt,
                 mode,
+                provider: Some(provider),
                 model: model.clone(),
                 goal_objective: None,
                 goal_token_budget: None,

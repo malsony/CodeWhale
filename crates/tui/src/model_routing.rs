@@ -233,6 +233,7 @@ pub(crate) struct AutoRouteSelection {
 /// Render the auto-router system prompt with the actual candidate ids
 /// (#3018): the classifier must answer with ids the active provider can
 /// serve, not hardcoded DeepSeek spellings.
+#[allow(dead_code)] // legacy active-provider flash router tests still exercise this prompt.
 pub(crate) fn auto_router_system_prompt(
     candidates: &RouterCandidates,
     cost_saving: bool,
@@ -341,6 +342,7 @@ pub(crate) fn normalize_auto_route_effort_for_provider(
     }
 }
 
+#[allow(dead_code)] // superseded by the route-effective inventory resolver (#3205).
 pub(crate) async fn resolve_auto_route_with_flash(
     config: &Config,
     latest_request: &str,
@@ -391,6 +393,7 @@ pub(crate) async fn resolve_auto_route_with_flash(
     }
 }
 
+#[allow(dead_code)] // retained for the legacy active-provider flash resolver.
 fn auto_route_from_heuristic(
     provider: ApiProvider,
     latest_request: &str,
@@ -636,6 +639,7 @@ fn parse_inventory_auto_route_recommendation(
     })
 }
 
+#[allow(dead_code)] // retained for the legacy active-provider flash resolver.
 async fn auto_route_flash_recommendation(
     config: &Config,
     candidates: &RouterCandidates,
@@ -957,6 +961,26 @@ mod tests {
             .is_none(),
             "router must not pair a DeepSeek model with the Z.ai provider"
         );
+    }
+
+    #[tokio::test]
+    async fn inventory_auto_route_resolves_active_authenticated_provider() {
+        let _env_lock = crate::test_support::lock_test_env();
+        let _deepseek = crate::test_support::EnvVarGuard::set("DEEPSEEK_API_KEY", "ds-key");
+        let _zai = crate::test_support::EnvVarGuard::set("ZAI_API_KEY", "zai-key");
+        let config = Config {
+            provider: Some("zai".to_string()),
+            ..Default::default()
+        };
+
+        let route =
+            resolve_auto_route_with_inventory(&config, "quick status check", "", "auto", "auto")
+                .await
+                .expect("inventory route should resolve with authenticated active provider");
+
+        assert_eq!(route.provider, ApiProvider::Zai);
+        assert_eq!(route.model, config.default_model());
+        assert_eq!(route.source, AutoRouteSource::Heuristic);
     }
 
     #[test]

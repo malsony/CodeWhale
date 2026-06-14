@@ -4,6 +4,7 @@
 //! allowing the UI to remain responsive while the engine processes requests.
 
 use crate::compaction::CompactionConfig;
+use crate::config::ApiProvider;
 use crate::models::{Message, SystemPrompt};
 use crate::tools::goal::GoalStatus;
 use crate::tui::app::AppMode;
@@ -32,6 +33,10 @@ pub enum Op {
     SendMessage {
         content: String,
         mode: AppMode,
+        /// Provider route to use for this turn. `None` keeps the session
+        /// provider; auto model routing sets this when the inventory selects a
+        /// different authenticated provider.
+        provider: Option<ApiProvider>,
         model: String,
         goal_objective: Option<String>,
         goal_token_budget: Option<u32>,

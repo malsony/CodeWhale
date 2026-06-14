@@ -511,6 +511,7 @@ pub struct EngineHandle {
 /// The core engine that processes operations and emits events
 pub struct Engine {
     config: EngineConfig,
+    api_config: Config,
     deepseek_client: Option<DeepSeekClient>,
     deepseek_client_error: Option<String>,
     api_key_env_only_recovery: Option<String>,
@@ -657,6 +658,50 @@ impl Engine {
             return message;
         }
         format!("{message}\n\n{hint}")
+    }
+
+    fn config_for_runtime_route(&self, provider: ApiProvider, model: &str) -> Config {
+        let mut config = self.api_config.clone();
+        config.provider = Some(provider.as_str().to_string());
+        config.provider_config_for_mut(provider).model = Some(model.to_string());
+        if matches!(provider, ApiProvider::Deepseek | ApiProvider::DeepseekCN) {
+            config.default_text_model = Some(model.to_string());
+        }
+        config
+    }
+
+    fn activate_runtime_route(&mut self, provider: ApiProvider, model: &str) -> Result<(), String> {
+        if self.api_provider == provider
+            && self
+                .deepseek_client
+                .as_ref()
+                .is_some_and(|client| client.api_provider() == provider)
+        {
+            return Ok(());
+        }
+
+        let route_config = self.config_for_runtime_route(provider, model);
+        match DeepSeekClient::new(&route_config) {
+            Ok(client) => {
+                self.api_provider = provider;
+                self.api_config = route_config;
+                self.api_key_env_only_recovery =
+                    Self::env_only_api_key_recovery_hint(&self.api_config);
+                self.deepseek_client = Some(client.clone());
+                self.deepseek_client_error = None;
+                self.seam_manager = self
+                    .seam_manager
+                    .as_ref()
+                    .filter(|manager| manager.config().enabled)
+                    .map(|manager| SeamManager::new(client, manager.config().clone()));
+                Ok(())
+            }
+            Err(err) => Err(format!(
+                "Failed to configure provider route {} / {}: {err}",
+                provider.as_str(),
+                model
+            )),
+        }
     }
 
     /// Create a new engine with the given configuration
@@ -820,6 +865,7 @@ impl Engine {
 
         let mut engine = Engine {
             config,
+            api_config: api_config.clone(),
             deepseek_client,
             deepseek_client_error,
             api_key_env_only_recovery,
@@ -1119,6 +1165,7 @@ impl Engine {
                 Op::SendMessage {
                     content,
                     mode,
+                    provider,
                     model,
                     goal_objective,
                     goal_token_budget,
@@ -1139,6 +1186,7 @@ impl Engine {
                     self.handle_send_message(
                         content,
                         mode,
+                        provider,
                         model,
                         goal_objective,
                         goal_token_budget,
@@ -1414,6 +1462,7 @@ impl Engine {
                     self.handle_send_message(
                         new_message,
                         mode,
+                        Some(self.api_provider),
                         self.session.model.clone(),
                         self.config.goal_objective.clone(),
                         self.config.goal_token_budget,
@@ -1525,7 +1574,9 @@ impl Engine {
 
     fn runtime_prompt_message(&self) -> Message {
         let mode = self.current_mode;
-        let approval_mode = approval_mode_for(mode, self.session.approval_mode);
+        let agent_approval_mode =
+            agent_approval_mode_for_turn(self.session.auto_approve, self.session.approval_mode);
+        let approval_mode = approval_mode_for(mode, agent_approval_mode);
         Message {
             role: "user".to_string(),
             content: vec![ContentBlock::Text {
@@ -1584,6 +1635,7 @@ impl Engine {
         &mut self,
         content: String,
         mode: AppMode,
+        provider: Option<ApiProvider>,
         model: String,
         goal_objective: Option<String>,
         goal_token_budget: Option<u32>,
@@ -1655,6 +1707,27 @@ impl Engine {
         let snapshot_prompt_post = content.clone();
 
         // Check if we have the appropriate client
+        if let Some(provider) = provider
+            && let Err(message) = self.activate_runtime_route(provider, &model)
+        {
+            self.deepseek_client_error = Some(message.clone());
+            let _ = self
+                .tx_event
+                .send(Event::error(ErrorEnvelope::fatal_auth(message.clone())))
+                .await;
+            let _ = self
+                .tx_event
+                .send(Event::TurnComplete {
+                    usage: turn.usage.clone(),
+                    status: TurnOutcomeStatus::Failed,
+                    error: Some(message),
+                    tool_catalog: None,
+                    base_url: None,
+                })
+                .await;
+            return;
+        }
+
         if self.deepseek_client.is_none() {
             let message = self
                 .deepseek_client_error
@@ -2737,30 +2810,47 @@ fn agent_approval_mode_for_turn(
     }
 }
 
-/// Produce a minimal runtime-policy tag for the per-turn transient user message.
+/// Produce a minimal runtime-capabilities tag for the per-turn transient user message.
 ///
-/// All mode / approval / shell policy descriptions live in the frozen
-/// system-prompt prefix (`render_runtime_policy_reference()`). This tag
-/// is a pointer — the model looks up the corresponding rules from the
-/// system prompt.  Keeping these flags out of the static prefix preserves
-/// the DeepSeek prefix cache across mode-switches and config-toggles.
+/// Human UI labels such as Plan / Agent / YOLO and approval-mode names stay in
+/// the app shell. The model receives route-effective capabilities instead, so
+/// prompt behavior follows the current runtime posture without training the
+/// model on presentation labels or branding.
 fn runtime_prompt_text(
     mode: AppMode,
     approval_mode: crate::tui::approval::ApprovalMode,
     allow_shell: bool,
 ) -> String {
-    let mode_str = match mode {
-        AppMode::Agent => "agent",
-        AppMode::Plan => "plan",
-        AppMode::Yolo => "yolo",
+    let tool_profile = match mode {
+        AppMode::Agent => "workspace_write",
+        AppMode::Plan => "read_only",
+        AppMode::Yolo => "full_access",
     };
-    let approval_str = match approval_mode {
-        crate::tui::approval::ApprovalMode::Auto => "auto",
-        crate::tui::approval::ApprovalMode::Suggest => "suggest",
-        crate::tui::approval::ApprovalMode::Never => "never",
+    let write_access = match mode {
+        AppMode::Agent => "workspace",
+        AppMode::Plan => "none",
+        AppMode::Yolo => "full_disk",
+    };
+    let shell_access = if matches!(mode, AppMode::Plan) || !allow_shell {
+        "none"
+    } else {
+        "enabled"
+    };
+    let network_access = match mode {
+        AppMode::Plan => "none",
+        AppMode::Agent | AppMode::Yolo => "enabled",
+    };
+    let approval_gate = match approval_mode {
+        crate::tui::approval::ApprovalMode::Auto => "preapproved",
+        crate::tui::approval::ApprovalMode::Suggest => "user_confirm",
+        crate::tui::approval::ApprovalMode::Never => "blocked",
+    };
+    let planning = match mode {
+        AppMode::Plan => "required",
+        AppMode::Agent | AppMode::Yolo => "optional",
     };
     format!(
-        "<runtime_prompt visibility=\"internal\" mode=\"{mode_str}\" approval=\"{approval_str}\" allow_shell=\"{allow_shell}\"/>"
+        "<cw_runtime_capabilities visibility=\"internal\" tool_profile=\"{tool_profile}\" write_access=\"{write_access}\" shell_access=\"{shell_access}\" network_access=\"{network_access}\" approval_gate=\"{approval_gate}\" planning=\"{planning}\"/>"
     )
 }
 
@@ -2854,6 +2944,8 @@ mod capacity_flow;
 mod context;
 mod handle;
 pub(crate) use context::compact_tool_result_for_context;
+#[cfg(test)]
+use context::route_context_budget_for_provider;
 use context::{
     COMPACTION_SUMMARY_MARKER, MAX_CONTEXT_RECOVERY_ATTEMPTS, MIN_RECENT_MESSAGES_TO_KEEP,
     context_input_budget_for_provider, effective_max_output_tokens,

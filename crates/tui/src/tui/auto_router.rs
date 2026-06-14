@@ -4,9 +4,11 @@
 //! The TUI calls `resolve_auto_model_selection` once per user turn when
 //! `app.auto_model` is set. The async function builds a recent-context
 //! summary from `api_messages` (capped to six rows of up to 900 chars
-//! each), passes it through `model_routing::resolve_auto_route_with_flash`,
+//! each), passes it through `model_routing::resolve_auto_route_with_inventory`,
 //! and returns the selection (model + reasoning effort). The remaining
 //! helpers are pure transforms used to build that summary.
+
+use anyhow::Result;
 
 use crate::config::Config;
 use crate::model_routing;
@@ -25,13 +27,13 @@ pub(super) async fn resolve_auto_model_selection(
     config: &Config,
     message: &QueuedMessage,
     latest_content: &str,
-) -> model_routing::AutoRouteSelection {
+) -> Result<model_routing::AutoRouteSelection> {
     let latest_request = if latest_content.trim().is_empty() {
         message.display.as_str()
     } else {
         latest_content
     };
-    model_routing::resolve_auto_route_with_flash(
+    model_routing::resolve_auto_route_with_inventory(
         config,
         latest_request,
         &recent_auto_router_context(&app.api_messages),
