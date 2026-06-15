@@ -813,7 +813,10 @@ pub(crate) fn render_runtime_policy_reference() -> String {
          blocked. Shell and code execution are unavailable unless a later \
          runtime tag explicitly grants them. When you are ready to present an \
          implementation plan, call `update_plan`; that is the handoff signal \
-         for the UI to show the accept / revise / exit prompt.\n\n\
+         for the UI to show the accept / revise / exit prompt. If the request \
+         names a repository, URL, version, release, build state, benchmark, \
+         bug, PR, issue, API surface, or local code path, inspect the \
+         available context before calling `update_plan`.\n\n\
          For non-trivial work, make the plan artifact grounded: include the \
          objective, context summary, sources used, critical files, constraints, \
          recommended approach, verification plan, risks or unknowns, and any \

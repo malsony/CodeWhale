@@ -192,6 +192,14 @@ impl SidebarWorkSummary {
         !self.checklist_items.is_empty()
     }
 
+    fn checklist_is_complete(&self) -> bool {
+        self.checklist_is_primary()
+            && self
+                .checklist_items
+                .iter()
+                .all(|item| item.status == TodoStatus::Completed)
+    }
+
     fn has_strategy(&self) -> bool {
         self.strategy_explanation
             .as_deref()
@@ -234,6 +242,32 @@ impl SidebarWorkSummary {
         let percent = completed.saturating_mul(100) / self.strategy_steps.len();
         u8::try_from(percent).unwrap_or(u8::MAX)
     }
+}
+
+fn should_render_strategy_step(
+    summary: &SidebarWorkSummary,
+    step: &SidebarWorkStrategyStep,
+) -> bool {
+    !summary.checklist_is_complete() || step.status == StepStatus::Completed
+}
+
+fn renderable_strategy_steps(summary: &SidebarWorkSummary) -> Vec<&SidebarWorkStrategyStep> {
+    summary
+        .strategy_steps
+        .iter()
+        .filter(|step| should_render_strategy_step(summary, step))
+        .collect()
+}
+
+fn has_renderable_strategy(summary: &SidebarWorkSummary) -> bool {
+    summary
+        .strategy_explanation
+        .as_deref()
+        .is_some_and(|s| !s.trim().is_empty())
+        || summary
+            .strategy_steps
+            .iter()
+            .any(|step| should_render_strategy_step(summary, step))
 }
 
 fn sidebar_work_summary(app: &mut App) -> SidebarWorkSummary {
@@ -406,7 +440,11 @@ fn work_panel_hover_texts(
             summary.checklist_completion_pct
         ));
 
-        let reserve_for_strategy = if summary.has_strategy() { 2 } else { 0 };
+        let reserve_for_strategy = if has_renderable_strategy(summary) {
+            2
+        } else {
+            0
+        };
         let available_item_rows = max_rows
             .saturating_sub(texts.len())
             .saturating_sub(reserve_for_strategy)
@@ -456,7 +494,9 @@ fn work_panel_hover_texts(
         }
     }
 
-    if summary.has_strategy() && texts.len() < max_rows {
+    if has_renderable_strategy(summary) && texts.len() < max_rows {
+        let strategy_steps = renderable_strategy_steps(summary);
+
         if !summary.checklist_is_primary() && !summary.strategy_steps.is_empty() {
             let (pending, in_progress, completed) = summary.strategy_counts();
             let total = pending + in_progress + completed;
@@ -476,8 +516,9 @@ fn work_panel_hover_texts(
 
         let max_steps = max_rows
             .saturating_sub(texts.len())
-            .min(summary.strategy_steps.len());
-        for step in summary.strategy_steps.iter().take(max_steps) {
+            .min(strategy_steps.len());
+        let remaining = strategy_steps.len().saturating_sub(max_steps);
+        for step in strategy_steps.into_iter().take(max_steps) {
             let prefix = match step.status {
                 StepStatus::Pending => "[ ]",
                 StepStatus::InProgress => "[~]",
@@ -498,7 +539,6 @@ fn work_panel_hover_texts(
             texts.push(text);
         }
 
-        let remaining = summary.strategy_steps.len().saturating_sub(max_steps);
         if remaining > 0 && texts.len() < max_rows {
             texts.push(format!("+{remaining} more strategy steps"));
         }
@@ -615,7 +655,11 @@ fn push_work_checklist_lines(
         ),
     ]));
 
-    let reserve_for_strategy = if summary.has_strategy() { 2 } else { 0 };
+    let reserve_for_strategy = if has_renderable_strategy(summary) {
+        2
+    } else {
+        0
+    };
     let available_item_rows = max_rows
         .saturating_sub(lines.len())
         .saturating_sub(reserve_for_strategy)
@@ -681,11 +725,12 @@ fn push_work_strategy_lines(
     lines: &mut Vec<Line<'static>>,
     theme: &Theme,
 ) {
-    if !summary.has_strategy() || lines.len() >= max_rows {
+    if !has_renderable_strategy(summary) || lines.len() >= max_rows {
         return;
     }
 
     let checklist_is_primary = summary.checklist_is_primary();
+    let strategy_steps = renderable_strategy_steps(summary);
     if !checklist_is_primary && !summary.strategy_steps.is_empty() {
         let (pending, in_progress, completed) = summary.strategy_counts();
         let total = pending + in_progress + completed;
@@ -721,8 +766,9 @@ fn push_work_strategy_lines(
 
     let max_steps = max_rows
         .saturating_sub(lines.len())
-        .min(summary.strategy_steps.len());
-    for step in summary.strategy_steps.iter().take(max_steps) {
+        .min(strategy_steps.len());
+    let remaining = strategy_steps.len().saturating_sub(max_steps);
+    for step in strategy_steps.into_iter().take(max_steps) {
         let (prefix, color) = match step.status {
             StepStatus::Pending => ("[ ]", theme.plan_pending_color),
             StepStatus::InProgress => ("[~]", theme.plan_in_progress_color),
@@ -746,7 +792,6 @@ fn push_work_strategy_lines(
         )));
     }
 
-    let remaining = summary.strategy_steps.len().saturating_sub(max_steps);
     if remaining > 0 && lines.len() < max_rows {
         lines.push(Line::from(Span::styled(
             format!("+{remaining} more strategy steps"),
@@ -2967,7 +3012,7 @@ mod tests {
     }
 
     #[test]
-    fn work_panel_renders_checklist_as_primary_progress_surface() {
+    fn work_panel_renders_checklist_as_primary_progress_surface_while_incomplete() {
         let summary = SidebarWorkSummary {
             checklist_completion_pct: 33,
             checklist_items: vec![
@@ -3047,7 +3092,7 @@ mod tests {
     }
 
     #[test]
-    fn work_panel_hover_renders_strategy_as_context_when_checklist_exists() {
+    fn work_panel_hover_renders_strategy_as_context_while_checklist_incomplete() {
         let summary = SidebarWorkSummary {
             checklist_completion_pct: 0,
             checklist_items: vec![SidebarWorkChecklistItem {
@@ -3095,6 +3140,70 @@ mod tests {
                 .any(|line| line.contains("[✓] Map phase boundaries")),
             "hover strategy rows must not look like a second checklist: {hover:?}"
         );
+    }
+
+    #[test]
+    fn work_panel_suppresses_stale_active_strategy_when_checklist_complete() {
+        let summary = SidebarWorkSummary {
+            checklist_completion_pct: 100,
+            checklist_items: vec![
+                SidebarWorkChecklistItem {
+                    id: 1,
+                    content: "Ship the fix".to_string(),
+                    status: TodoStatus::Completed,
+                },
+                SidebarWorkChecklistItem {
+                    id: 2,
+                    content: "Run focused tests".to_string(),
+                    status: TodoStatus::Completed,
+                },
+            ],
+            strategy_explanation: Some("Old plan metadata".to_string()),
+            strategy_steps: vec![
+                SidebarWorkStrategyStep {
+                    text: "Completed context".to_string(),
+                    status: StepStatus::Completed,
+                    elapsed: String::new(),
+                },
+                SidebarWorkStrategyStep {
+                    text: "Stale active phase".to_string(),
+                    status: StepStatus::InProgress,
+                    elapsed: String::new(),
+                },
+                SidebarWorkStrategyStep {
+                    text: "Stale next phase".to_string(),
+                    status: StepStatus::Pending,
+                    elapsed: String::new(),
+                },
+            ],
+            ..SidebarWorkSummary::default()
+        };
+
+        let display = lines_to_text(&work_panel_lines(
+            &summary,
+            80,
+            16,
+            PaletteMode::Dark,
+            &palette::UI_THEME,
+        ));
+        let hover = work_panel_hover_texts(&summary, 80, 16);
+
+        for rendered in [&display, &hover] {
+            assert!(
+                rendered
+                    .iter()
+                    .any(|line| line.contains("phase done: Completed context")),
+                "completed strategy context may still render: {rendered:?}"
+            );
+            assert!(
+                !rendered.iter().any(|line| line.contains("phase now:")),
+                "stale in-progress strategy must not render as active work: {rendered:?}"
+            );
+            assert!(
+                !rendered.iter().any(|line| line.contains("phase next:")),
+                "stale pending strategy must not render as upcoming work: {rendered:?}"
+            );
+        }
     }
 
     #[test]

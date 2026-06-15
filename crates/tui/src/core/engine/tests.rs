@@ -666,6 +666,14 @@ fn quick_plan_requests_force_update_plan_on_first_step() {
     ));
     assert!(!should_force_update_plan_first(
         AppMode::Plan,
+        "Can you make a plan to get ver 0.8.61 fully built and benchmark it with our api server?"
+    ));
+    assert!(!should_force_update_plan_first(
+        AppMode::Plan,
+        "Make a high-level plan for benchmarking https://github.com/sierra-research/tau2-bench."
+    ));
+    assert!(!should_force_update_plan_first(
+        AppMode::Plan,
         "Inspect the repo and then give me a quick plan."
     ));
     assert!(!should_force_update_plan_first(

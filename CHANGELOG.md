@@ -21,7 +21,7 @@ recorded in this changelog. Crediting them now, with the version they shipped in
 - `ExternalTool` abstraction layer — thanks @aboimpinto (#1794, #2294, v0.8.48)
 - Ephemeral generated project context — thanks @Final527 (report) (#3058, v0.8.59)
 
-## [0.8.61] - 2026-06-14
+## [0.8.61] - 2026-06-15
 
 This release lands the **runtime control plane** for multi-agent work: the TUI stays
 responsive while sub-agents run, sub-agents converge toward fleet-style durable workers
@@ -40,6 +40,8 @@ folds in several community contributions.
   verifier-as-judge gate before a goal may complete. (#3215, #891, #1976, #2058, #2029)
 - Parent-visible worker interaction contract — a recommended action per worker. (#3226)
 - Maintainer GitHub workflow skills; ACP registry submission prepared. (#3192)
+- OpenAI-compatible `/v1/chat/completions` endpoint on the legacy app-server HTTP transport,
+  provider-neutral, with model registry resolution and configured-credential forwarding.
 
 ### Changed
 
@@ -74,6 +76,12 @@ folds in several community contributions.
 - Self-update retries transient GitHub metadata/asset failures and falls back from the GitHub
   REST API to the public `releases/latest` redirect before constructing release asset URLs. (#3232)
 - Provider picker lists providers in neutral alphabetical order instead of hard-coding DeepSeek first; the active provider stays pre-selected. (#3076)
+- Work sidebar no longer shows stale `phase now:` / `phase next:` strategy rows once the checklist
+  is 100% complete.
+- Plan mode no longer shortcuts investigation for requests that name a repository, URL, version,
+  release, build state, benchmark, bug, PR, issue, API surface, or local code path.
+- Dependency security: `ws` pinned to 8.21.0 across npm packages to close remote memory-exhaustion
+  DoS (dependabot).
 
 ### Community contributions
 
@@ -88,7 +96,7 @@ folds in several community contributions.
 - DeepInfra provider support — thanks @idling11 (#3235, closes #3231)
 - WeChat bridge (`integrations/weixin-bridge` via Feishu + Tencent OpenClaw) — thanks @VincentCorleone (#3206)
 - Config robustness: atomic permission-rule save, one-time config `.bak` backup before the first changed write, `CODEWHALE_HOME` as primary config home, and accepting the dispatcher-written config shape (camelCase aliases + `[features.enabled]` table) so legacy/dual-written configs parse cleanly
-- Dependency/CI bumps: docker login/qemu actions, softprops gh-release, download-artifact, vitest, @opennextjs/cloudflare
+- Dependency/CI bumps: docker login/qemu actions, softprops gh-release, download-artifact, vitest, @opennextjs/cloudflare, form-data, js-yaml, dompurify, ws
 
 ## [0.8.60] - 2026-06-13
 
